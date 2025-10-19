@@ -1,6 +1,6 @@
 #!/bin/bash
 # ========================================================================= #
-# Module compress_tif - version 3.1 - Simon Bufféral - 16/05/25             #
+# Module compress_tif - version 3.1 - Simon Bufféral - 25/05/16             #
 # CONTACT: simon.bufferal@ens.fr                                            #
 # -> Reduces raster size 											    	#
 # USAGE: compress_tif rasters.tif [-b[3]] [-c] [-t[I]] [-n] [-aNo_data_val] #
