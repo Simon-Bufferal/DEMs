@@ -1,0 +1,97 @@
+#!/bin/bash
+# ========================================================================= #
+# Module compress_tif - version 3.1 - Simon Bufféral - 16/05/25             #
+# CONTACT: simon.bufferal@ens.fr                                            #
+# -> Reduces raster size 											    	#
+# USAGE: compress_tif rasters.tif [-b[3]] [-c] [-t[I]] [-n] [-aNo_data_val] #
+# DEFAULT:  					  -b 1 -co LZW -ot Byte -co NBITS=1 		#
+# ========================================================================= #
+
+# Fonction pour afficher la taille d'un fichier en Mo (Mégaoctets)
+print_file_size_mo() {
+    local file="$1"
+    # stat -f%z fonctionne sur macOS/BSD; sur Linux utilisez stat -c%s
+    local size_bytes=$(stat -f%z "$file")
+    # conversion en Mo, 2 décimales
+    local size_mo=$(echo "scale=2; $size_bytes/1024/1024" | bc -l)
+    echo "$size_mo"
+}
+
+# Fonction pour vérifier la taille d'un fichier (en Go)
+check_file_size() {
+    local file=$1
+    local size=$(stat -f%z "$file")
+    local size_gb=$(echo "$size / 1024 / 1024 / 1024" | bc -l)
+    local size_round=$(echo "$size_gb" | awk '{printf "%d", $1}')  # Conversion en nombre entier
+
+    if (( $(echo "$size_gb < 4" | bc -l) )); then
+        return 0
+    else
+        echo "WARNING: La taille du fichier '$file' dépasse 4 GB: ${size_round} GB."
+        return 1
+    fi
+}
+
+# Analyse des options
+if [[ $@ =~ '-b3' ]]; then
+    BAND='-b 1 -b 2 -b 3'
+elif [[ $@ =~ '-b' ]]; then
+    BAND='-b 1'
+fi
+
+if [[ $@ =~ '-cD' ]]; then
+    COMP='-co COMPRESS=DEFLATE'
+elif [[ $@ =~ '-c' ]]; then
+    COMP='-co COMPRESS=LZW'
+fi
+
+if [[ $@ =~ '-n' ]]; then
+    BYT='-co NBITS=1'
+fi
+
+if [[ $@ =~ '-tI' ]]; then
+    TYPE='-ot Int16'
+elif [[ $@ =~ '-t' ]]; then
+    TYPE='-ot Byte'
+fi
+
+if [[ $@ =~ '-a' ]]; then
+    for ARG in $@; do
+        if [[ $ARG =~ '-a' ]]; then
+            if [[ $BAND == '-b 1 -b 2 -b 3' ]]; then
+                NODA='-dstnodata "${ARG//-a/} ${ARG//-a/} ${ARG//-a/}"'
+            else
+                NODA="-a_nodata ${ARG//-a/}"
+            fi
+        fi
+    done
+fi
+
+# Boucle principale sur chaque argument
+for ARG in "$@"; do
+    if [ -f "$ARG" ]; then
+        FILE="$ARG"
+        # --- Affichage de la taille initiale ---
+        echo "------------------------------------------------------------"
+        echo "Taille initiale : $(print_file_size_mo "$FILE") Mo"
+
+        if [[ -n $COMP ]] && ! check_file_size "$FILE"; then
+            echo "gdal_translate $BAND $TYPE $NODA $BYT $FILE tmp"
+            gdal_translate $BAND $TYPE $NODA $BYT "$FILE" tmp
+            if check_file_size tmp; then
+                echo "La taille du fichier ne dépasse plus 4 GB; compression finale..."
+                gdal_translate $COMP tmp "$FILE"
+            else
+                mv tmp "$FILE"
+            fi
+        else
+            mv "$FILE" tmp
+            echo "gdal_translate $BAND $COMP $TYPE $NODA $BYT tmp $FILE"
+            gdal_translate $BAND $COMP $TYPE $NODA $BYT tmp "$FILE"
+            rm tmp
+        fi
+
+        # --- Affichage de la taille finale ---
+        echo "Taille finale : $(print_file_size_mo "$FILE") Mo"
+    fi
+done
